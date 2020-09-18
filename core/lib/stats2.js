@@ -26,9 +26,6 @@ function create() {
 function combine(statsObjects) {
   let result = create();
   L.each(statsObjects, function(stats) {
-    L.each(stats._entries, function(entry) {
-      result._entries.push(entry);
-    });
     L.each(stats._latencies, function(latency) {
       result._latencies.push(latency);
     });
@@ -41,6 +38,7 @@ function combine(statsObjects) {
       }
     });
     result._completedScenarios += stats._completedScenarios;
+    result._scenariosAvoided += stats._scenariosAvoided;
     L.each(stats._codes, function(count, code) {
       if(result._codes[code]) {
         result._codes[code] += count;
@@ -64,6 +62,12 @@ function combine(statsObjects) {
     });
     result._matches += stats._matches;
 
+    L.each(stats._counters, function(value, name) {
+      if (!result._counters[name]) {
+        result._counters[name] = 0;
+      }
+      result._counters[name] += value;
+    });
     L.each(stats._customStats, function(values, name) {
       if (!result._customStats[name]) {
         result._customStats[name] = [];
@@ -107,6 +111,11 @@ Stats.prototype.newScenario = function(name) {
 
 Stats.prototype.completedScenario = function() {
   this._completedScenarios++;
+  return this;
+};
+
+Stats.prototype.avoidedScenario = function() {
+  this._scenariosAvoided++;
   return this;
 };
 
@@ -163,9 +172,7 @@ Stats.prototype.report = function() {
   result.scenariosCompleted = this._completedScenarios;
   result.requestsCompleted = this._completedRequests;
 
-  let latencies = L.map(this._entries, (e) => {
-    return e[2];
-  });
+  let latencies = this._latencies;
 
   result.latency = {
     min: round(L.min(latencies) / 1e6, 1),
@@ -200,7 +207,7 @@ Stats.prototype.report = function() {
   result.codes = this._codes;
   result.matches = this._matches;
 
-  result.latencies = this.getEntries();
+  result.latencies = latencies;
 
   result.customStats = {};
   L.each(this._customStats, function(ns, name) {
@@ -212,11 +219,13 @@ Stats.prototype.report = function() {
       p99: round(sl.percentile(ns, 0.99), 1)
     };
   });
+  result.counters = this._counters;
 
   if (this._concurrency !== null) {
     result.concurrency = this._concurrency;
   }
   result.pendingRequests = this._pendingRequests;
+  result.scenariosAvoided = this._scenariosAvoided;
 
   return result;
 };
@@ -227,6 +236,14 @@ Stats.prototype.addCustomStat = function(name, n) {
   }
 
   this._customStats[name].push(n);
+  return this;
+};
+
+Stats.prototype.counter = function(name, value) {
+  if (!this._counters[name]) {
+    this._counters[name] = 0;
+  }
+  this._counters[name] += value;
   return this;
 };
 
@@ -242,8 +259,10 @@ Stats.prototype.reset = function() {
   this._scenarioLatencies = [];
   this._matches = 0;
   this._customStats = {};
+  this._counters = {};
   this._concurrency = null;
   this._pendingRequests = 0;
+  this._scenariosAvoided = 0;
   this._scenarioCounter = {};
   return this;
 };

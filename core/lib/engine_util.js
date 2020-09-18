@@ -6,12 +6,12 @@
 
 const async = require('async');
 const debug = require('debug')('engine_util');
-const traverse = require('traverse');
+const deepForEach = require('deep-for-each');
 const esprima = require('esprima');
 const L = require('lodash');
 const vm = require('vm');
 const A = require('async');
-const jsonpath = require('JSONPath');
+const jsonpath = require('jsonpath');
 const cheerio = require('cheerio');
 const jitter = require('./jitter').jitter;
 
@@ -55,10 +55,16 @@ function createThink(requestSpec, opts) {
 // "count" can be an integer (negative or positive) or a string defining a range
 // like "1-15"
 function createLoopWithCount(count, steps, opts) {
-  let from = parseLoopCount(count).from;
-  let to = parseLoopCount(count).to;
-
   return function aLoop(context, callback) {
+
+    let count2 = count;
+    if (typeof count === 'string') {
+      count2 = template(count, context);
+    }
+
+    let from = parseLoopCount(count2).from;
+    let to = parseLoopCount(count2).to;
+
     let i = from;
     let newContext = context;
     let loopIndexVar = (opts && opts.loopValue) || '$loopCount';
@@ -67,7 +73,7 @@ function createLoopWithCount(count, steps, opts) {
     let abortEarly = false;
 
     let overValues = null;
-    let loopValue = null;
+    let loopValue = i; // default to the current iteration of the loop, ie same as $loopCount
     if (typeof opts.overValues !== 'undefined') {
       if (opts.overValues && typeof opts.overValues === 'object') {
         overValues = opts.overValues;
@@ -182,22 +188,25 @@ function isProbableEnough(obj) {
   return r < probability;
 }
 
-function template(o, context) {
+function template(o, context, inPlace) {
   let result;
-  if (typeof o === 'object') {
-    result = traverse(o).map(function(x) {
 
-      if (typeof x === 'string') {
-        this.update(template(x, context));
-      } else {
-        return x;
-      }
-    });
-  } else {
+  if (typeof o === 'undefined') {
+    return undefined;
+  }
+
+  if (o && (o.constructor === Object || o.constructor === Array)) {
+    if (!inPlace) {
+      result = L.cloneDeep(o);
+    } else {
+      result = o;
+    }
+    templateObjectOrArray(result, context);
+  } else if (typeof o === 'string') {
     if (!/{{/.test(o)) {
       return o;
     }
-    const funcCallRegex = /{{\s*(\$[A-Za-z0-9_]+\s*\(\s*.*\s*\))\s*}}/;
+    const funcCallRegex = /{{\s*(\$[A-Za-z0-9_]+\s*\(\s*[A-Za-z0-9_,\s]*\s*\))\s*}}/;
     let match = o.match(funcCallRegex);
     if (match) {
       // This looks like it could be a function call:
@@ -220,12 +229,40 @@ function template(o, context) {
 
       result = renderVariables(o, context.vars);
     }
+  } else {
+    return o;
   }
+
   return result;
 }
 
+// Mutates the object in place
+function templateObjectOrArray(o, context) {
+  deepForEach(o, (value, key, subj, path) => {
+    const newPath = template(path, context, true);
+
+    let newValue;
+    if (value && (value.constructor !== Object && value.constructor !== Array)) {
+      newValue = template(value, context, true);
+    } else {
+      newValue = value;
+    }
+
+    debug(`path = ${path} ; value = ${JSON.stringify(value)} (${typeof value}) ; (subj type: ${subj.length ? 'list':'hash'}) ; newValue = ${JSON.stringify(newValue)} ; newPath = ${newPath}`);
+
+    // If path has changed, we need to unset the original path and
+    // explicitly walk down the new subtree from this path:
+    if (path !== newPath) {
+      L.unset(o, path);
+      newValue = template(value, context, true);
+    }
+
+    L.set(o, newPath, newValue);
+  });
+}
+
 function renderVariables (str, vars) {
-  const RX = /{{{?[\s$\w]+}}}?/g;
+  const RX = /{{{?[\s$\w\.\[\]\'\"-]+}}}?/g;
   let rxmatch;
   let result = str.substring(0, str.length);
 
@@ -240,7 +277,7 @@ function renderVariables (str, vars) {
     if (matches[0] === str) {
       // there's nothing else in the template but the variable
       const varName = str.replace(/{/g, '').replace(/}/g, '').trim();
-      return vars[varName] || '';
+      return sanitiseValue(L.get(vars, varName));
     }
   }
 
@@ -248,7 +285,8 @@ function renderVariables (str, vars) {
     let templateStr = result.match(RX)[0];
     const varName = templateStr.replace(/{/g, '').replace(/}/g, '').trim();
 
-    let varValue = vars[varName];
+    let varValue = L.get(vars, varName);
+
     if (typeof varValue === 'object') {
       varValue = JSON.stringify(varValue);
     }
@@ -459,7 +497,18 @@ function dummyParser(body, callback) {
 
 // doc is a JSON object
 function extractJSONPath(doc, expr) {
-  let results = jsonpath.eval(doc, expr);
+  // typeof null is 'object' hence the explicit check here
+  if (typeof doc !== 'object' || doc === null) {
+    return '';
+  }
+
+  let results;
+
+  try {
+    results = jsonpath.query(doc, expr);
+  } catch (queryErr) {
+    debug(queryErr);
+  }
 
   if (!results) {
     return '';
@@ -546,4 +595,9 @@ function isXML(res) {
 
 function randomInt (low, high) {
   return Math.floor(Math.random() * (high - low + 1) + low);
+}
+
+function sanitiseValue (value) {
+  if (value === 0 || value === false) return value;
+  return value ? value : '';
 }

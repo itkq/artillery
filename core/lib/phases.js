@@ -11,8 +11,7 @@ const isUndefined = _.isUndefined;
 const arrivals = require('arrivals');
 const debug = require('debug')('phases');
 const crypto = require('crypto');
-const Rolex = require('rolex');
-Rolex.noConflict();
+const driftless = require('driftless');
 
 module.exports = phaser;
 
@@ -84,9 +83,11 @@ function createPause(spec, ee) {
 }
 
 function createRamp(spec, ee) {
-  const tick = 1000 / spec.rampTo; // smallest tick
+  const tick = 1000 / Math.max(spec.arrivalRate, spec.rampTo); // smallest tick
   const r0 = spec.arrivalRate; // initial arrival rate
-  const periods = spec.rampTo - spec.arrivalRate + 1;
+  const difference = spec.rampTo - spec.arrivalRate;
+  const offset = difference < 0 ? -1 : 1;
+  const periods = Math.abs(difference) + 1;
   const ticksPerPeriod = (spec.duration / periods) * 1000 / tick;
   const periodLenSec = spec.duration / periods;
 
@@ -110,12 +111,12 @@ function createRamp(spec, ee) {
     let ticksElapsed = 0;
 
     let i = 0;
-    const timer = Rolex.setInterval(function maybeArrival() {
+    const timer = driftless.setDriftlessInterval(function maybeArrival() {
       let startedAt = Date.now();
       if(++ticksElapsed > ticksPerPeriod) {
         debug(`ticksElapsed: ${ticksElapsed}; upping probability or stopping`);
-        if (currentRate < spec.rampTo) {
-          currentRate++;
+        if (offset === -1 ? currentRate > spec.rampTo : currentRate < spec.rampTo) {
+          currentRate += offset;
           ticksElapsed = 0;
 
           p = (periodLenSec * currentRate) / ticksPerPeriod;
@@ -125,7 +126,7 @@ function createRamp(spec, ee) {
         } else {
           debug(`done: ticksElapsed = ${ticksElapsed}; currentRate = ${currentRate}; spec.rampTo = ${spec.rampTo} `);
 
-          Rolex.clearInterval(timer);
+          driftless.clearDriftless(timer);
           ee.emit('phaseCompleted', spec);
 
           /*
@@ -145,7 +146,7 @@ function createRamp(spec, ee) {
 
       let prob = probabilities[i++] / 256;
       if (prob <= p) {
-        ee.emit('arrival');
+        ee.emit('arrival', spec);
       }
     }, tick);
   };
@@ -158,7 +159,7 @@ function createArrivalCount(spec, ee) {
     const interval = duration / spec.arrivalCount;
     const p = arrivals.uniform.process(interval, duration);
     p.on('arrival', function() {
-      ee.emit('arrival');
+      ee.emit('arrival', spec);
     });
     p.on('finished', function() {
       ee.emit('phaseCompleted', spec);
@@ -178,7 +179,7 @@ function createArrivalRate(spec, ee) {
     debug('creating a %s process for arrivalRate', spec.mode);
     const p = arrivals[spec.mode].process(ar, duration);
     p.on('arrival', function() {
-      ee.emit('arrival');
+      ee.emit('arrival', spec);
     });
     p.on('finished', function() {
       ee.emit('phaseCompleted', spec);

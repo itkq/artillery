@@ -15,12 +15,12 @@
 }
 
 @test "Clean up when killed" {
-  ARTILLERY_WORKERS=4 ./bin/artillery quick -d 120 -r 1 http://localhost:3003/ &
+  MULTICORE=1 ARTILLERY_WORKERS=4 ./bin/artillery quick -d 120 -r 1 http://localhost:3003/ &
   artillery_pid=$!
   sleep 5
   kill $artillery_pid
   sleep 4
-  [[ -z $(pgrep -lfa node | grep worker) ]]
+  [[ -z $(pgrep -lfa node | grep worker.js) ]]
 }
 
 # Ref: https://github.com/shoreditch-ops/artillery/issues/215
@@ -30,6 +30,21 @@
 }
 
 @test "Warns when CPU usage exceeds a threshold" {
-    CPU_HOT_BEFORE_WARN=5 ARTILLERY_CPU_THRESHOLD=-1 ./bin/artillery quick -d 10 -c 10 http://localhost:3003/ | grep 'CPU usage'
+    CPU_HOT_BEFORE_WARN=1 ARTILLERY_CPU_THRESHOLD=-1 ./bin/artillery quick -d 10 -c 10 http://localhost:3003/ | grep 'CPU usage'
     [[ $? -eq 0  ]]
+}
+
+@test "Exits with non zero when an unknown command is used" {
+    run ./bin/artillery makemeasandwich --with cheese
+    [[ $status -eq 1 ]]
+}
+
+@test "Exits with non-zero when an unknown option is used" {
+    run ./bin/artillery quick --sandwich ploughmans
+    [[ $status -eq 1 ]]
+}
+
+@test "Exits with 0 when a known flag used with no command" {
+    run ./bin/artillery -V
+    [[ $status -eq 0 ]]
 }
