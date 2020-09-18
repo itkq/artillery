@@ -1,6 +1,6 @@
 {
   "name": "artillery",
-  "version": "1.6.0-25",
+  "version": "1.6.0-26",
   "description": "Flexible and powerful toolkit for load and functional testing",
   "main": "./lib",
   "engines": {
@@ -21,7 +21,9 @@
   "author": "Hassy Veldstra <h@veldstra.org>",
   "contributors": [
     "Kieran Gorman (https://github.com/kjgorman)",
-    "Antony Jones (https://github.com/antony)"
+    "Antony Jones (https://github.com/antony)",
+    "Joe Schofield (https://github.com/JoeScho)",
+    "Kush Jain (https://github.com/kush-jain)"
   ],
   "license": "MPL-2.0",
   "preferGlobal": true,

@@ -73,7 +73,7 @@ function createLoopWithCount(count, steps, opts) {
     let abortEarly = false;
 
     let overValues = null;
-    let loopValue = null;
+    let loopValue = i; // default to the current iteration of the loop, ie same as $loopCount
     if (typeof opts.overValues !== 'undefined') {
       if (opts.overValues && typeof opts.overValues === 'object') {
         overValues = opts.overValues;
@@ -254,7 +254,7 @@ function renderVariables (str, vars) {
     if (matches[0] === str) {
       // there's nothing else in the template but the variable
       const varName = str.replace(/{/g, '').replace(/}/g, '').trim();
-      return L.get(vars, varName) || '';
+      return sanitiseValue(L.get(vars, varName));
     }
   }
 
@@ -572,4 +572,9 @@ function isXML(res) {
 
 function randomInt (low, high) {
   return Math.floor(Math.random() * (high - low + 1) + low);
+}
+
+function sanitiseValue (value) {
+  if (value === 0 || value === false) return value;
+  return value ? value : '';
 }
