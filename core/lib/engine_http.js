@@ -133,8 +133,11 @@ HttpEngine.prototype.step = function step(requestSpec, ee, opts) {
     return function(context, callback) {
       let processFunc = self.config.processor[requestSpec.function];
       if (processFunc) {
-        return processFunc(context, ee, function() {
-          return callback(null, context);
+        return processFunc(context, ee, function(hookErr) {
+          if (hookErr) {
+            ee.emit('error', hookErr.code || hookErr.message);
+          }
+          return callback(hookErr, context);
         });
       } else {
         return process.nextTick(function () { callback(null, context); });
@@ -323,9 +326,15 @@ HttpEngine.prototype.step = function step(requestSpec, ee, opts) {
                 requestInfo.body = requestParams.body;
               } else {
                 // Only show the beginning of long bodies
-                requestInfo.body = requestParams.body.substring(0, 512);
-                if (requestParams.body.length > 512) {
-                  requestInfo.body += ' ...';
+                if (typeof requestParams.body === 'string') {
+                  requestInfo.body = requestParams.body.substring(0, 512);
+                  if (requestParams.body.length > 512) {
+                    requestInfo.body += ' ...';
+                  }
+                } else if (typeof requestParams.body === 'object')  {
+                  requestInfo.body = `< ${requestParams.body.constructor.name} >`;
+                } else {
+                  requestInfo.body = String(requestInfo.body);
                 }
               }
             }
@@ -420,7 +429,7 @@ HttpEngine.prototype.step = function step(requestSpec, ee, opts) {
         if (typeof requestParams.capture === 'object' ||
             typeof requestParams.match === 'object' ||
             requestParams.afterResponse ||
-            opts.afterResponse ||
+            (typeof opts.afterResponse === 'object' && opts.afterResponse.length > 0) ||
             process.env.DEBUG) {
           maybeCallback = requestCallback;
         }

@@ -1,6 +1,6 @@
 {
   "name": "artillery",
-  "version": "1.6.0-21",
+  "version": "1.6.0-23",
   "description": "Flexible and powerful toolkit for load and functional testing",
   "main": "./lib",
   "engines": {
@@ -38,7 +38,6 @@
     "email": "npm@veldstra.org"
   },
   "dependencies": {
-    "JSONPath": "^0.11.2",
     "arrivals": "^2.1.1",
     "artillery-plugin-statsd": "^2.2.0",
     "async": "^1.5.2",
@@ -48,10 +47,12 @@
     "csv-parse": "^4.6.3",
     "debug": "^2.2.0",
     "deep-equal": "^1.0.1",
+    "driftless": "^2.0.3",
     "esprima": "^4.0.0",
     "filtrex": "^0.5.4",
     "js-yaml": "^3.10.0",
     "jsck": "^0.3.2",
+    "jsonpath": "^1.0.0",
     "lodash": "^4.17.2",
     "moment": "^2.22.1",
     "nanotimer": "^0.3.15",
@@ -60,7 +61,6 @@
     "pidusage": "^1.1.6",
     "rc": "^1.1.6",
     "request": "^2.85.0",
-    "rolex": "^1.1.2",
     "socket.io-client": "^2.1.0",
     "socketio-wildcard": "^2.0.0",
     "stats-lite": "^2.1.0",

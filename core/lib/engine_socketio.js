@@ -130,7 +130,9 @@ SocketIoEngine.prototype.step = function (requestSpec, ee) {
       steps,
       {
         loopValue: requestSpec.loopValue,
-        overValues: requestSpec.over
+        overValues: requestSpec.over,
+        whileTrue: self.config.processor ?
+          self.config.processor[requestSpec.whileTrue] : undefined
       }
     );
   }
@@ -157,14 +159,13 @@ SocketIoEngine.prototype.step = function (requestSpec, ee) {
       data: template(requestSpec.emit.data, context)
     };
 
-    let endCallback = function (err, context) {
+    let endCallback = function (err, context, needEmit) {
       if (err) {
         debug(err);
       }
 
       if (isAcknowledgeRequired(requestSpec)) {
-        // Acknowledge required so add callback to emit
-        socketio.emit(outgoing.channel, outgoing.data, function () {
+        let ackCallback = function () {
           let response = {
             data: template(requestSpec.emit.acknowledge.data, context),
             capture: template(requestSpec.emit.acknowledge.capture, context),
@@ -183,10 +184,19 @@ SocketIoEngine.prototype.step = function (requestSpec, ee) {
             }
             return callback(err, context);
           });
-        });
+        }
+
+        // Acknowledge required so add callback to emit
+        if (needEmit) {
+          socketio.emit(outgoing.channel, outgoing.data, ackCallback);
+        } else {
+          ackCallback();
+        }
       } else {
         // No acknowledge data is expected, so emit without a listener
-        socketio.emit(outgoing.channel, outgoing.data);
+        if (needEmit) {
+          socketio.emit(outgoing.channel, outgoing.data);
+        }
         markEndTime(ee, context, startedAt);
         return callback(null, context);
       }
@@ -209,7 +219,7 @@ SocketIoEngine.prototype.step = function (requestSpec, ee) {
           }
           // Stop listening on the response channel
           socketio.off(response.channel);
-          return endCallback(err, context);
+          return endCallback(err, context, false);
         });
       });
       // Send the data on the specified socket.io channel
@@ -225,13 +235,13 @@ SocketIoEngine.prototype.step = function (requestSpec, ee) {
         }
       }, waitTime);
     } else {
-      endCallback(null, context);
+      endCallback(null, context, true);
     }
   };
 
   function preStep(context, callback){
     // Set default namespace in emit action
-    requestSpec.emit.namespace = template(requestSpec.emit.namespace, context) || "/";
+    requestSpec.emit.namespace = template(requestSpec.emit.namespace, context) || "";
 
     self.loadContextSocket(requestSpec.emit.namespace, context, function(err, socket){
       if(err) {
@@ -304,7 +314,7 @@ SocketIoEngine.prototype.compile = function (tasks, scenarioSpec, ee) {
   function zero(callback, context) {
     context.__receivedMessageCount = 0;
     ee.emit('started');
-    self.loadContextSocket('/', context, function done(err) {
+    self.loadContextSocket('', context, function done(err) {
       if (err) {
         ee.emit('error', err);
         return callback(err, context);
