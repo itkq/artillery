@@ -34,13 +34,13 @@ function HttpEngine(script) {
   // If config.http.pool is not set, we create new agents for each virtual user.
   // That's done when the VU is initialized.
 
-  let maxSockets = Infinity;
+  this.maxSockets = Infinity;
   if (script.config.http && script.config.http.pool) {
-    maxSockets = Number(script.config.http.pool);
+    this.maxSockets = Number(script.config.http.pool);
   }
   let agentOpts = Object.assign(DEFAULT_AGENT_OPTIONS, {
-    maxSockets: maxSockets,
-    maxFreeSockets: maxSockets
+    maxSockets: this.maxSockets,
+    maxFreeSockets: this.maxSockets
   });
 
   this._httpAgent = new http.Agent(agentOpts);
@@ -245,6 +245,20 @@ HttpEngine.prototype.step = function step(requestSpec, ee, opts) {
           // TODO: Warn if body is not a string or a buffer
         }
 
+        // add loop, name & uri elements to be interpolated
+        if (context.vars.$loopElement) {
+          context.vars.$loopElement = template(context.vars.$loopElement, context);
+        }
+        if (requestParams.name) {
+          requestParams.name = template(requestParams.name, context);
+        }
+        if (requestParams.uri) {
+          requestParams.uri = template(requestParams.uri, context);
+        }
+        if (requestParams.url) {
+          requestParams.url = template(requestParams.url, context);
+        }
+
         // TODO: Use traverse on the entire flow instead
 
         if (params.form) {
@@ -401,7 +415,7 @@ HttpEngine.prototype.step = function step(requestSpec, ee, opts) {
                 });
 
                 _.each(result.captures, function(v, k) {
-                  context.vars[k] = v;
+                  _.set(context.vars, k, v);
                 });
               }
 
@@ -457,7 +471,7 @@ HttpEngine.prototype.step = function step(requestSpec, ee, opts) {
 
         request(requestParams, maybeCallback)
           .on('request', function(req) {
-            debugRequests("request start: %s", req.path);
+            debugRequests('request start: %s', req.path);
             ee.emit('request');
 
             const startedAt = process.hrtime();
@@ -466,7 +480,7 @@ HttpEngine.prototype.step = function step(requestSpec, ee, opts) {
               let code = res.statusCode;
               const endedAt = process.hrtime(startedAt);
               let delta = (endedAt[0] * 1e9) + endedAt[1];
-              debugRequests("request end: %s", req.path);
+              debugRequests('request end: %s', req.path);
               ee.emit('response', delta, code, context._uid);
             });
           }).on('end', function() {
@@ -524,14 +538,6 @@ HttpEngine.prototype.compile = function compile(tasks, scenarioSpec, ee) {
     async.waterfall(
       steps,
       function scenarioWaterfallCb(err, context) {
-        // If the connection was refused we might not have a context
-        if (context && context._httpAgent) {
-          context._httpAgent.destroy();
-        }
-        if (context && context._httpsAgent) {
-          context._httpsAgent.destroy();
-        }
-
         if (err) {
           //ee.emit('error', err.message);
           return callback(err, context);

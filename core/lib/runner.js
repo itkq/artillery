@@ -252,8 +252,12 @@ function run(script, ee, options, runState) {
   let aggregate = [];
 
   let phaser = createPhaser(script.config.phases);
-  phaser.on('arrival', function() {
-    runScenario(script, intermediate, runState);
+  phaser.on('arrival', function (spec) {
+    if (runState.pendingScenarios >= spec.maxVusers) {
+      intermediate.avoidedScenario();
+    } else {
+      runScenario(script, intermediate, runState);
+    }
   });
   phaser.on('phaseStarted', function(spec) {
     ee.emit('phaseStarted', spec);
@@ -289,10 +293,11 @@ function run(script, ee, options, runState) {
   const periodicStatsTimer = setInterval(sendStats, options.periodicStats * 1000);
 
   function sendStats() {
-    aggregate.push(intermediate.clone());
     intermediate._concurrency = runState.pendingScenarios;
     intermediate._pendingRequests = runState.pendingRequests;
     ee.emit('stats', intermediate.clone());
+    delete intermediate._entries;
+    aggregate.push(intermediate.clone());
     intermediate.reset();
   }
 
@@ -353,7 +358,7 @@ function runScenario(script, intermediate, runState) {
     runState.compiledScenarios = _.map(
         script.scenarios,
         function(scenarioSpec) {
-          const name = scenarioSpec.engine || 'http';
+          const name = scenarioSpec.engine || script.config.engine || 'http';
           const engine = runState.engines.find((e) => e.__name === name);
           return engine.createScenario(scenarioSpec, runState.scenarioEvents);
         }
@@ -400,7 +405,8 @@ function createContext(script) {
     },
     funcs: {
       $randomNumber: $randomNumber,
-      $randomString: $randomString
+      $randomString: $randomString,
+      $template: input => engineUtil.template(input, { vars: result.vars })
     }
   };
   let result = _.cloneDeep(INITIAL_CONTEXT);
@@ -410,7 +416,10 @@ function createContext(script) {
   //
   if (script.config.payload) {
     _.each(script.config.payload, function(el) {
-      let row = el.reader(el.data);
+
+      // If data = [] (i.e. the CSV file is empty, or only has headers and
+      // skipHeaders = true), then row could = undefined
+      let row = el.reader(el.data) || [];
       _.each(el.fields, function(fieldName, j) {
         result.vars[fieldName] = row[j];
       });

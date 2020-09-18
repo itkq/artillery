@@ -26,9 +26,6 @@ function create() {
 function combine(statsObjects) {
   let result = create();
   L.each(statsObjects, function(stats) {
-    L.each(stats._entries, function(entry) {
-      result._entries.push(entry);
-    });
     L.each(stats._latencies, function(latency) {
       result._latencies.push(latency);
     });
@@ -41,6 +38,7 @@ function combine(statsObjects) {
       }
     });
     result._completedScenarios += stats._completedScenarios;
+    result._scenariosAvoided += stats._scenariosAvoided;
     L.each(stats._codes, function(count, code) {
       if(result._codes[code]) {
         result._codes[code] += count;
@@ -116,6 +114,11 @@ Stats.prototype.completedScenario = function() {
   return this;
 };
 
+Stats.prototype.avoidedScenario = function() {
+  this._scenariosAvoided++;
+  return this;
+};
+
 Stats.prototype.addCode = function(code) {
   if (!this._codes[code]) {
     this._codes[code] = 0;
@@ -169,9 +172,7 @@ Stats.prototype.report = function() {
   result.scenariosCompleted = this._completedScenarios;
   result.requestsCompleted = this._completedRequests;
 
-  let latencies = L.map(this._entries, (e) => {
-    return e[2];
-  });
+  let latencies = this._latencies;
 
   result.latency = {
     min: round(L.min(latencies) / 1e6, 1),
@@ -206,7 +207,7 @@ Stats.prototype.report = function() {
   result.codes = this._codes;
   result.matches = this._matches;
 
-  result.latencies = this.getEntries();
+  result.latencies = latencies;
 
   result.customStats = {};
   L.each(this._customStats, function(ns, name) {
@@ -224,6 +225,7 @@ Stats.prototype.report = function() {
     result.concurrency = this._concurrency;
   }
   result.pendingRequests = this._pendingRequests;
+  result.scenariosAvoided = this._scenariosAvoided;
 
   return result;
 };
@@ -260,6 +262,7 @@ Stats.prototype.reset = function() {
   this._counters = {};
   this._concurrency = null;
   this._pendingRequests = 0;
+  this._scenariosAvoided = 0;
   this._scenarioCounter = {};
   return this;
 };
