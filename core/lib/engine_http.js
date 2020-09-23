@@ -218,8 +218,13 @@ HttpEngine.prototype.step = function step(requestSpec, ee, opts) {
     async.eachSeries(
       functionNames,
       function iteratee(functionName, next) {
+        let fn = template(functionName, context);
+        let processFunc = config.processor[fn];
+        if (!processFunc) {
+          processFunc = function(r, c, e, cb) { return cb(null); };
+          console.log(`WARNING: custom function ${fn} could not be found`); // TODO: a 'warning' event
+        }
 
-        let processFunc = config.processor[functionName];
         processFunc(requestParams, context, ee, function(err) {
           if (err) {
             return next(err);
@@ -257,6 +262,14 @@ HttpEngine.prototype.step = function step(requestSpec, ee, opts) {
         }
         if (requestParams.url) {
           requestParams.url = template(requestParams.url, context);
+        }
+
+        // Follow all redirects by default unless specified otherwise
+        if (typeof requestParams.followRedirect === 'undefined') {
+          requestParams.followRedirect = true;
+          requestParams.followAllRedirects = true;
+        } else if (requestParams.followRedirect === false) {
+          requestParams.followAllRedirects = false;
         }
 
         // TODO: Use traverse on the entire flow instead
@@ -329,6 +342,12 @@ HttpEngine.prototype.step = function step(requestSpec, ee, opts) {
           requestParams.agent = context._httpAgent;
         }
 
+        if (!requestParams.url.startsWith('http')) {
+          let err = new Error(`Invalid URL - ${requestParams.url}`);
+          ee.emit('error', err.message);
+          return callback(err, context);
+        }
+
         function requestCallback(err, res, body) {
           if (err) {
             return;
@@ -340,6 +359,13 @@ HttpEngine.prototype.step = function step(requestSpec, ee, opts) {
               method: requestParams.method,
               headers: requestParams.headers
             };
+
+            if (context._jar._jar && typeof context._jar._jar.getCookieStringSync === 'function') {
+              requestInfo = Object.assign(requestInfo, {
+                cookie: context._jar._jar.getCookieStringSync(requestParams.url)
+              });
+            }
+
             if (requestParams.json && typeof requestParams.json !== 'boolean') {
               requestInfo.json = requestParams.json;
             }
@@ -382,9 +408,13 @@ HttpEngine.prototype.step = function step(requestSpec, ee, opts) {
                 });
               }
 
-              debug('captures and matches:');
-              debug(result.matches);
-              debug(result.captures);
+              if (Object.keys(result.matches).length > 0 ||
+                  Object.keys(result.captures).length > 0) {
+
+                debug('captures and matches:');
+                debug(result.matches);
+                debug(result.captures);
+              }
 
               // match and capture are strict by default:
               const failedMatches = _.keys(result.matches).filter(function(expression) {
@@ -424,7 +454,14 @@ HttpEngine.prototype.step = function step(requestSpec, ee, opts) {
               async.eachSeries(
                 functionNames,
                 function iteratee(functionName, next) {
-                  let processFunc = config.processor[functionName];
+                  let fn = template(functionName, context);
+                  let processFunc = config.processor[fn];
+                  if (!processFunc) {
+                    // TODO: DRY - #223
+                    processFunc = function(r, c, e, cb) { return cb(null); };
+                    console.log(`WARNING: custom function ${fn} could not be found`); // TODO: a 'warning' event
+
+                  }
                   processFunc(requestParams, res, context, ee, function(err) {
                     if (err) {
                       return next(err);
